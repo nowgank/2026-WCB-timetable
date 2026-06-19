@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>학회 세션 타임테이블 — 구글시트 연동</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap');
+
+  :root{
+    --paper:#0c0d10;
+    --panel:#15171b;
+    --line:#2a2d33;
+    --ink:#ECEEF1;
+    --dim:#8b909a;
+    --amber:#ffb454;
+    --live:#ff5d5d;
+    --good:#7ad1c9;
+    --mono:'Inter', sans-serif;
+    --sans:'IBM Plex Sans KR', sans-serif;
+  }
+
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{background:var(--paper); color:var(--ink); font-family:var(--sans); -webkit-font-smoothing:antialiased;}
+  body{padding:0 0 80px;}
+
+  /* ---------- Setup panel ---------- */
+  .setup{max-width:1400px; margin:0 auto; padding:18px 28px; border-bottom:1px solid var(--line);}
+  .setup-row{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+  .setup input[type=text]{
+    flex:1; min-width:260px; background:var(--panel); border:1px solid var(--line); color:var(--ink);
+    font-family:var(--mono); font-size:12px; padding:9px 12px; border-radius:6px;
+  }
+  .setup button{
+    font-family:var(--mono); font-size:12px; letter-spacing:.04em; background:var(--amber); color:#1a1100;
+    border:none; border-radius:6px; padding:9px 16px; cursor:pointer; font-weight:700;
+  }
+  .setup button.secondary{background:#23262c; color:var(--ink); border:1px solid var(--line);}
+  .setup button:hover{opacity:.88;}
+  .setup-status{font-family:var(--mono); font-size:11px; color:var(--dim); margin-top:8px;}
+  .setup-status.ok{color:var(--good);}
+  .setup-status.err{color:var(--live);}
+
+  /* ---------- Header / board ---------- */
+  .board-header{position:sticky; top:0; z-index:50; background:var(--paper); border-bottom:1px solid var(--line); padding:22px 28px 16px;}
+  .board-top{display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:12px; max-width:1400px; margin:0 auto;}
+  .board-title{font-family:var(--mono); font-size:13px; letter-spacing:.12em; color:var(--amber); text-transform:uppercase; margin-bottom:6px;}
+  .board-name{font-size:clamp(22px,3.2vw,34px); font-weight:700; letter-spacing:-0.02em;}
+  .board-meta{font-family:var(--mono); font-size:12px; color:var(--dim); text-align:right; line-height:1.6;}
+  .live-dot{display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--live); margin-right:6px; animation:pulse 1.6s infinite; vertical-align:middle;}
+  @keyframes pulse{0%,100%{opacity:1;} 50%{opacity:.25;}}
+
+  .strip{max-width:1400px; margin:14px auto 0; display:flex; align-items:center; gap:18px; flex-wrap:wrap; font-family:var(--mono); font-size:11px; color:var(--dim);}
+
+  .day-tabs{max-width:1400px; margin:16px auto 0; display:flex; gap:8px; flex-wrap:wrap;}
+  .day-tab{
+    font-family:var(--mono); font-size:11px; color:var(--dim); background:var(--panel);
+    border:1px solid var(--line); border-radius:7px; padding:8px 14px; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; gap:2px; letter-spacing:.04em;
+  }
+  .day-tab .day-date{font-size:10px; color:var(--dim);}
+  .day-tab.active{color:var(--paper); background:var(--amber); border-color:var(--amber); font-weight:700;}
+  .day-tab.active .day-date{color:#3a2400;}
+
+  /* ---------- Grid ---------- */
+  .grid-wrap{max-width:1400px; margin:18px auto 0; padding:0 28px; overflow-x:auto;}
+  .grid{display:grid; border-top:1px solid var(--line); border-left:1px solid var(--line); min-width:1500px;}
+  .corner, .room-head{
+    background:var(--panel); border-right:1px solid var(--line); border-bottom:1px solid var(--line);
+    font-family:var(--mono); font-size:14px; letter-spacing:.04em; padding:14px 14px; position:sticky; top:0;
+    min-width:0; overflow:hidden;
+  }
+  .corner{color:var(--dim); z-index:20; left:0; background:var(--panel); box-shadow:1px 0 0 var(--panel), 2px 0 0 var(--line);}
+  .room-head{color:var(--ink); font-weight:700; z-index:10; text-transform:uppercase;}
+
+  .time-cell{
+    background:var(--panel); border-right:1px solid var(--line); border-bottom:1px solid var(--line);
+    font-family:var(--mono); font-size:16px; font-weight:700; color:var(--amber);
+    padding:18px 14px; display:flex; align-items:flex-start; position:sticky; left:0; z-index:15;
+    min-width:0; overflow:hidden; box-shadow:1px 0 0 var(--panel), 2px 0 0 var(--line);
+  }
+
+  .cell{
+    border-right:1px solid var(--line); border-bottom:1px solid var(--line);
+    padding:13px; min-height:90px; background:var(--paper); position:relative;
+    min-width:0; overflow:hidden; z-index:1;
+  }
+  .cell.empty{background:repeating-linear-gradient(135deg, var(--paper), var(--paper) 8px, #131418 8px, #131418 9px);}
+
+  .cell.cell-split{padding:0; display:grid; grid-template-columns:1fr 1fr; z-index:1;}
+  .split-col{padding:13px; min-width:0; overflow:hidden; position:relative; z-index:1; background:var(--paper);}
+  .split-col-team{border-right:1px dashed var(--line); background:#0e1a14;}
+  .split-label{font-family:var(--mono); font-size:10px; letter-spacing:.06em; color:var(--dim); text-transform:uppercase; margin-bottom:8px;}
+  .split-label-team{color:var(--good); display:flex; align-items:center; gap:4px;}
+  .split-label-team i{font-size:12px;}
+
+  .session-block{margin-bottom:13px; border-left:3px solid var(--line); padding-left:11px; min-width:0; overflow-wrap:break-word; word-break:break-word;}
+  .session-block:last-child{margin-bottom:0;}
+  .session-block .sname{font-family:var(--mono); font-size:13px; color:var(--ink); font-weight:700; letter-spacing:.02em;}
+  .session-block .count{
+    font-family:var(--mono); font-size:11.5px; color:var(--paper); background:var(--line);
+    border-radius:20px; padding:2px 8px; margin-left:7px; font-weight:700;
+  }
+  .titles{margin-top:6px; display:flex; flex-direction:column; gap:5px;}
+  .title-row{font-size:14px; line-height:1.45; color:var(--ink); overflow-wrap:break-word; word-break:break-word;}
+  .title-row .ptime{font-family:var(--mono); font-size:11.5px; color:var(--good); font-weight:700;}
+  .title-row .who{font-family:var(--mono); font-size:11.5px; font-weight:700; padding:1px 6px; border-radius:4px; display:inline-block; margin-top:2px;}
+
+  .note-icon{position:relative; display:inline-flex; cursor:pointer; color:var(--dim); margin-left:4px; vertical-align:-2px;}
+  .note-icon i{font-size:14px;}
+  .note-icon:hover{color:var(--amber);}
+  .note-tooltip{
+    display:none; position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(-50%);
+    background:#1f2128; border:1px solid var(--line); border-radius:6px; padding:8px 10px;
+    font-family:var(--sans); font-size:12px; line-height:1.4; color:var(--ink);
+    width:max-content; max-width:240px; white-space:normal; z-index:10;
+    box-shadow:0 4px 14px rgba(0,0,0,.35);
+  }
+  .note-icon:hover .note-tooltip, .note-icon:focus .note-tooltip{display:block;}
+
+  .footnote{max-width:1400px; margin:24px auto 0; padding:0 28px; font-family:var(--mono); font-size:11px; color:var(--dim); line-height:1.7;}
+  .footnote b{color:var(--ink);}
+  .footnote code{background:var(--panel); padding:1px 5px; border-radius:3px;}
+
+  ::-webkit-scrollbar{height:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--line); border-radius:4px;}
+</style>
+</head>
+<body>
+
+<div class="setup">
+  <div class="setup-row">
+    <span style="font-family:var(--mono); font-size:12px; color:var(--dim);">자동 연동 중 — 아래 상태를 확인하세요</span>
+    <button id="reloadBtn" class="secondary">새로고침</button>
+    <button id="demoBtn" class="secondary">데모 데이터 보기</button>
+  </div>
+  <div class="setup-status" id="status">불러오는 중...</div>
+</div>
+
+<header class="board-header">
+  <div class="board-top">
+    <div>
+      <div class="board-title">Conference Timetable — Live</div>
+      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <div class="board-name">2026 WCB</div>
+        <a href="#" id="programLink" target="_blank" rel="noopener" style="display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:12px; color:#1a1100; background:var(--amber); border-radius:6px; padding:7px 13px; font-weight:700; text-decoration:none; white-space:nowrap;">
+          <i class="ti ti-external-link" style="font-size:13px;" aria-hidden="true"></i> 전체 프로그램 보기
+        </a>
+      </div>
+    </div>
+    <div class="board-meta">
+      <div><span class="live-dot"></span><span id="liveLabel">데모 데이터 표시 중</span></div>
+      <div id="updatedAt">마지막 업데이트: -</div>
+    </div>
+  </div>
+  <div class="strip">
+    <div>시트 컬럼(순서): <b style="color:var(--ink)">날짜 · 이름 · 세션시간 · 세션명 · 장소 · 발표시간 · 제목 · 비고</b></div>
+    <div style="margin-left:auto;">뱃지 숫자 = 해당 세션을 신청한 인원 수 · <span style="color:var(--good)">초록 시간</span> = 개별 발표 시간</div>
+  </div>
+  <nav class="day-tabs" id="dayTabs"></nav>
+</header>
+
+<div class="grid-wrap"><div class="grid" id="grid"></div></div>
+
+<div class="footnote">
+  <b>연동 방법</b> — ① 구글시트 1행에 <code>날짜, 이름, 세션시간, 세션명, 장소, 발표시간, 제목, 비고</code> 헤더를 이 순서대로 → ② 참가자가 관심 있는 발표마다 한 행씩 입력(같은 사람이 여러 행 가능, "Team SK"라는 이름으로 입력하면 해당 칸이 Team SK/참가자 두 영역으로 자동 분리되어 표시됨). <b>날짜</b>는 <code>2026-07-11</code>처럼 실제 날짜로, <b>세션시간</b>은 그 세션 전체 시간(예: <code>09:30-10:30</code>), <b>발표시간</b>은 그 발표 하나의 구체적인 시각(예: <code>09:50-10:00</code>), <b>비고</b>는 선택 입력으로 비워둬도 되며 입력하면 제목 옆 <i class="ti ti-info-circle" aria-hidden="true"></i> 아이콘에 마우스를 올리거나 탭하면 내용이 보입니다 → ③ 파일 → 공유 → 웹에 게시 → 해당 시트만 CSV로 게시 → ④ 생성된 URL을 이 HTML 코드 상단의 <code>const CSV_URL = "..."</code> 부분에 붙여넣고 저장. <b>Room 표시 순서</b>는 코드 상단 <code>const ROOM_ORDER = [...]</code> 배열에 원하는 순서대로 적으면 항상 그 순서로 고정 표시되고(목록에 없는 Room은 뒤에 자동 추가), 각 Room은 세션 블록 왼쪽 강조선과 헤더 점 색으로 구분됩니다(최대 20개 Room까지 색이 자동 배정). 참가자 이름은 가나다순으로 색이 고정 배정되어 같은 사람은 항상 같은 색으로 보입니다. <b>전체 프로그램 링크</b>는 코드 상단 <code>const PROGRAM_URL = "..."</code>에 학회 공식 페이지 주소를 넣으면 제목 옆 버튼이 활성화됩니다(비워두면 버튼이 자동으로 숨겨짐).
+</div>
+
+<script>
+// ===== 여기에 구글시트 '웹에 게시' CSV URL을 붙여넣으세요 =====
+const CSV_URL = "https://docs.google.com/spreadsheets/d/e/여기에_실제_게시ID를_넣으세요/pub?output=csv";
+// ============================================================
+
+// ===== 학회 공식 프로그램 전체 페이지 링크 =====
+const PROGRAM_URL = "https://여기에_학회_공식_프로그램_페이지_주소를_넣으세요";
+// ================================================
+
+// ===== Room 표시 순서를 고정하려면 여기에 순서대로 적으세요 =====
+// 비워두면([]) 데이터에 등장하는 이름을 가나다순으로 자동 정렬합니다.
+// 채우면 이 순서를 그대로 따르고, 목록에 없는 Room은 맨 뒤에 등장 순서대로 붙습니다.
+const ROOM_ORDER = [
+  "Ballroom A", "Room 211-214", "Room 301", "Room 202-204",
+  "Room 109", "Room 223-224", "Room 217-219", "Room 220"
+];
+// ================================================================
+
+let rows = []; // {name, date, sessionTime, room, session, title, presentTime}
+let selectedDate = null;
+
+function demoRows(){
+  return [
+    {name:"김민수", date:"2026-07-11", sessionTime:"09:30-10:30", room:"Room 211-214", session:"OA106", title:"Effects of fatigue on gait stability", presentTime:"09:30-09:40", note:"지도교수님 추천 발표"},
+    {name:"이지은", date:"2026-07-11", sessionTime:"09:30-10:30", room:"Room 211-214", session:"OA106", title:"Effects of fatigue on gait stability", presentTime:"09:30-09:40", note:""},
+    {name:"박서준", date:"2026-07-11", sessionTime:"09:30-10:30", room:"Room 211-214", session:"OA106", title:"Cognitive load and obstacle crossing", presentTime:"09:50-10:00", note:""},
+    {name:"Team SK", date:"2026-07-11", sessionTime:"09:30-10:30", room:"Room 211-214", session:"OA106", title:"Cognitive load and obstacle crossing", presentTime:"09:50-10:00", note:"팀 회의 후 같이 이동"},
+    {name:"Team SK", date:"2026-07-11", sessionTime:"09:30-10:30", room:"Room 211-214", session:"OA106", title:"Effects of fatigue on gait stability", presentTime:"09:30-09:40", note:""},
+    {name:"김민수", date:"2026-07-11", sessionTime:"09:30-10:30", room:"Room 202-204", session:"OA109", title:"Optimization of neuromuscular control models", presentTime:"10:00-10:10", note:""},
+    {name:"최유진", date:"2026-07-11", sessionTime:"09:30-10:30", room:"Room 109", session:"OA111", title:"Wearable exoskeleton rehab outcomes", presentTime:"09:40-09:50", note:"질문 준비해가기"},
+    {name:"한도윤", date:"2026-07-11", sessionTime:"09:30-10:30", room:"Room 109", session:"OA111", title:"VR-based gait rehabilitation", presentTime:"10:10-10:20", note:""},
+    {name:"이지은", date:"2026-07-12", sessionTime:"11:30-12:40", room:"Ballroom A", session:"OA117", title:"Knee OA progression in older adults", presentTime:"11:30-11:40", note:""},
+    {name:"정하늘", date:"2026-07-12", sessionTime:"11:30-12:40", room:"Ballroom A", session:"OA117", title:"Bracing effects on knee loading", presentTime:"12:10-12:20", note:""},
+    {name:"박서준", date:"2026-07-12", sessionTime:"11:30-12:40", room:"Room 211-214", session:"OA118", title:"Neurosensory feedback during locomotion", presentTime:"11:40-11:50", note:""},
+    {name:"최유진", date:"2026-07-12", sessionTime:"11:30-12:40", room:"Room 301", session:"OA119", title:"Footwear cushioning and impact forces", presentTime:"12:00-12:10", note:""},
+    {name:"김민수", date:"2026-07-13", sessionTime:"15:00-16:00", room:"Ballroom A", session:"OA129", title:"Return-to-sport criteria after ACL", presentTime:"15:00-15:10", note:""},
+    {name:"한도윤", date:"2026-07-13", sessionTime:"15:00-16:00", room:"Room 223-224", session:"OA137", title:"Muscle fiber typing and fatigue", presentTime:"15:30-15:40", note:""},
+    {name:"정하늘", date:"2026-07-14", sessionTime:"17:00-18:00", room:"Room 211-214", session:"OA142", title:"Running economy and cadence", presentTime:"17:00-17:10", note:""},
+    {name:"이지은", date:"2026-07-14", sessionTime:"17:00-18:00", room:"Room 211-214", session:"OA142", title:"Footstrike pattern transitions", presentTime:"17:20-17:30", note:""},
+    {name:"박서준", date:"2026-07-15", sessionTime:"17:00-18:00", room:"Room 109", session:"OA147", title:"Tibial stress and load accumulation", presentTime:"17:10-17:20", note:""},
+  ];
+}
+
+function timeSortKey(t){
+  const m = (t||'').match(/(\d{1,2}):(\d{2})/);
+  if(!m) return 9999;
+  return parseInt(m[1])*60 + parseInt(m[2]);
+}
+
+// ---- Per-person color assignment (order of first appearance, no collisions until palette runs out) ----
+const personPalette = [
+  {bg:"#3a2a00", fg:"#ffb454"}, // amber
+  {bg:"#0e3330", fg:"#7ad1c9"}, // teal
+  {bg:"#2e1f3d", fg:"#c792ea"}, // purple
+  {bg:"#3d1626", fg:"#ff8aa8"}, // pink
+  {bg:"#1f2f44", fg:"#7eb6ff"}, // blue
+  {bg:"#3a2410", fg:"#ffae6b"}, // orange
+  {bg:"#1c3322", fg:"#8fe39a"}, // green
+  {bg:"#3a1414", fg:"#ff7a7a"}, // red
+  {bg:"#2a2a3d", fg:"#a3a8ff"}, // indigo
+  {bg:"#3d2a14", fg:"#ffd27a"}, // gold
+  {bg:"#142e3a", fg:"#7adfff"}, // cyan
+  {bg:"#33142e", fg:"#ff9ee3"}, // magenta
+];
+let personColorMap = {};
+let nextColorIdx = 0;
+function resetPersonColors(){
+  personColorMap = {};
+  nextColorIdx = 0;
+}
+function colorForPerson(name){
+  if(name === 'Team SK') return TEAM_SK_COLOR;
+  if(!personColorMap[name]){
+    personColorMap[name] = personPalette[nextColorIdx % personPalette.length];
+    nextColorIdx++;
+  }
+  return personColorMap[name];
+}
+
+function getDateList(){
+  return [...new Set(rows.map(r=>r.date).filter(Boolean))].sort((a,b)=> new Date(a) - new Date(b));
+}
+
+// ---- Per-room fixed accent color (left border of session blocks), up to 20 rooms ----
+const roomPalette = [
+  "#ffb454","#7ad1c9","#c792ea","#ff8aa8","#7eb6ff",
+  "#ffae6b","#8fe39a","#ff7a7a","#a3a8ff","#ffd27a",
+  "#7adfff","#ff9ee3","#c9e07a","#e0a9ff","#7affc2",
+  "#ffcf7a","#9adfff","#ff7ab8","#b8ff7a","#d6b3ff"
+];
+let roomColorMap = {};
+function assignRoomColors(roomsList){
+  roomColorMap = {};
+  roomsList.forEach((room, i)=>{
+    roomColorMap[room] = roomPalette[i % roomPalette.length];
+  });
+}
+function colorForRoom(room){
+  return roomColorMap[room] || "#ffb454";
+}
+
+function sortRooms(roomsPresent){
+  if(!ROOM_ORDER || ROOM_ORDER.length === 0){
+    return [...roomsPresent].sort((a,b)=>a.localeCompare(b,'ko'));
+  }
+  const ordered = ROOM_ORDER.filter(r => roomsPresent.includes(r));
+  const extras = roomsPresent.filter(r => !ROOM_ORDER.includes(r)).sort((a,b)=>a.localeCompare(b,'ko'));
+  return [...ordered, ...extras];
+}
+
+function buildDayTabs(){
+  const tabs = document.getElementById('dayTabs');
+  const dates = getDateList();
+  if(dates.length === 0){ tabs.innerHTML = ''; return; }
+  if(!selectedDate || !dates.includes(selectedDate)) selectedDate = dates[0];
+
+  tabs.innerHTML = dates.map((d, i)=>{
+    const active = d === selectedDate ? 'active' : '';
+    const label = formatDateLabel(d);
+    return `<button class="day-tab ${active}" data-date="${d}">DAY ${i+1}<span class="day-date">${label}</span></button>`;
+  }).join('');
+
+  tabs.querySelectorAll('.day-tab').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      selectedDate = btn.dataset.date;
+      buildDayTabs();
+      buildGrid();
+    });
+  });
+}
+
+function formatDateLabel(d){
+  const dt = new Date(d);
+  if(isNaN(dt)) return d;
+  const days = ['일','월','화','수','목','금','토'];
+  return `${dt.getMonth()+1}/${dt.getDate()} (${days[dt.getDay()]})`;
+}
+
+const TEAM_SK_COLOR = {bg:"#0e3330", fg:"#7ad1c9"};
+
+function assignPersonColors(){
+  resetPersonColors();
+  const allNames = [...new Set(rows.map(r=>r.name))]
+    .filter(n => n !== 'Team SK')
+    .sort((a,b)=>a.localeCompare(b,'ko'));
+  allNames.forEach(name => colorForPerson(name));
+}
+
+function buildGrid(){
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+
+  const dayRows = selectedDate ? rows.filter(r => r.date === selectedDate) : rows;
+
+  const times = [...new Set(dayRows.map(r=>r.sessionTime))].sort((a,b)=>timeSortKey(a)-timeSortKey(b));
+  const roomsList = sortRooms([...new Set(dayRows.map(r=>r.room))]);
+  assignRoomColors(roomsList);
+
+  if(times.length === 0 || roomsList.length === 0){
+    grid.innerHTML = '<div style="padding:24px; color:var(--dim); font-family:var(--mono); font-size:12px;">이 날짜에는 표시할 데이터가 없습니다.</div>';
+    return;
+  }
+
+  grid.style.gridTemplateColumns = `140px repeat(${roomsList.length}, 1fr)`;
+
+  const corner = document.createElement('div');
+  corner.className = 'corner';
+  corner.textContent = 'SESSION TIME / ROOM';
+  grid.appendChild(corner);
+
+  roomsList.forEach(r=>{
+    const h = document.createElement('div');
+    h.className = 'room-head';
+    const c = colorForRoom(r);
+    h.innerHTML = `<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${c}; margin-right:7px; vertical-align:middle;"></span>${r}`;
+    grid.appendChild(h);
+  });
+
+  // group rows by sessionTime+room -> list of raw rows (kept separate per name group later)
+  const cellRows = {};
+  dayRows.forEach(r=>{
+    const key = `${r.sessionTime}|||${r.room}`;
+    if(!cellRows[key]) cellRows[key] = [];
+    cellRows[key].push(r);
+  });
+
+  function groupBySessionAndTitle(rowList){
+    // session -> title -> [{name, presentTime, note}]
+    const g = {};
+    rowList.forEach(r=>{
+      if(!g[r.session]) g[r.session] = {};
+      if(!g[r.session][r.title]) g[r.session][r.title] = [];
+      g[r.session][r.title].push({name: r.name, presentTime: r.presentTime, note: r.note});
+    });
+    return g;
+  }
+
+  function renderSessionBlocksHTML(sessions, room){
+    let html = '';
+    const roomColor = colorForRoom(room);
+    Object.keys(sessions).forEach(sessionName=>{
+      const titles = sessions[sessionName];
+      const totalCount = Object.values(titles).reduce((a,arr)=>a+arr.length,0);
+      html += `<div class="session-block" style="border-left-color:${roomColor};">
+        <span class="sname">${sessionName}<span class="count" style="background:${roomColor};">${totalCount}</span></span>
+        <div class="titles">`;
+      const titleEntries = Object.entries(titles).sort((a,b)=>{
+        const ta = a[1][0] ? timeSortKey(a[1][0].presentTime) : 9999;
+        const tb = b[1][0] ? timeSortKey(b[1][0].presentTime) : 9999;
+        return ta - tb;
+      });
+      titleEntries.forEach(([title, entries])=>{
+        const pTime = entries[0].presentTime || '';
+        const noteText = (entries.find(e => e.note && e.note.trim()) || {}).note || '';
+        const nameTags = entries.map(e=>{
+          const c = colorForPerson(e.name);
+          return `<span class="who" style="background:${c.bg}; color:${c.fg};">${e.name}</span>`;
+        }).join(' ');
+        const noteIcon = noteText
+          ? `<span class="note-icon" tabindex="0"><i class="ti ti-info-circle" aria-hidden="true"></i><span class="note-tooltip">${noteText}</span></span>`
+          : '';
+        html += `<div class="title-row">${pTime ? `<span class="ptime">${pTime}</span> ` : ''}${title}${noteIcon} ${nameTags}</div>`;
+      });
+      html += `</div></div>`;
+    });
+    return html;
+  }
+
+  times.forEach(time=>{
+    const tc = document.createElement('div');
+    tc.className = 'time-cell';
+    tc.textContent = time;
+    grid.appendChild(tc);
+
+    roomsList.forEach(room=>{
+      const cell = document.createElement('div');
+      const key = `${time}|||${room}`;
+      const rowList = cellRows[key];
+      if(!rowList){
+        cell.className = 'cell empty';
+        grid.appendChild(cell);
+        return;
+      }
+
+      const teamRows = rowList.filter(r => r.name === 'Team SK');
+      const personRows = rowList.filter(r => r.name !== 'Team SK');
+
+      if(teamRows.length > 0){
+        cell.className = 'cell cell-split';
+        const leftHTML = renderSessionBlocksHTML(groupBySessionAndTitle(teamRows), room);
+        const rightHTML = personRows.length
+          ? renderSessionBlocksHTML(groupBySessionAndTitle(personRows), room)
+          : `<p style="font-size:11px; color:var(--dim); font-family:var(--mono);">개인 신청 없음</p>`;
+        cell.innerHTML = `
+          <div class="split-col split-col-team">
+            <div class="split-label split-label-team"><i class="ti ti-users" aria-hidden="true"></i> Team SK</div>
+            ${leftHTML}
+          </div>
+          <div class="split-col">
+            <div class="split-label">참가자</div>
+            ${rightHTML}
+          </div>
+        `;
+      } else {
+        cell.className = 'cell';
+        cell.innerHTML = renderSessionBlocksHTML(groupBySessionAndTitle(rowList), room);
+      }
+      grid.appendChild(cell);
+    });
+  });
+}
+
+function parseCSV(text){
+  const out = [];
+  let row = [], field = '', inQuotes = false;
+  for(let i=0;i<text.length;i++){
+    const c = text[i];
+    if(inQuotes){
+      if(c === '"'){
+        if(text[i+1] === '"'){ field += '"'; i++; } else { inQuotes = false; }
+      } else field += c;
+    } else {
+      if(c === '"') inQuotes = true;
+      else if(c === ','){ row.push(field); field=''; }
+      else if(c === '\n'){ row.push(field); out.push(row); row=[]; field=''; }
+      else if(c === '\r'){ /* skip */ }
+      else field += c;
+    }
+  }
+  if(field.length || row.length){ row.push(field); out.push(row); }
+  return out.filter(r => r.length && r.some(x=>x.trim()!==''));
+}
+
+function applyCSV(text){
+  const table = parseCSV(text);
+  if(table.length < 2) throw new Error('데이터가 비어있습니다');
+  const header = table[0].map(h=>h.trim());
+  const idx = {
+    date: header.indexOf('날짜'),
+    name: header.indexOf('이름'),
+    sessionTime: header.indexOf('세션시간'),
+    session: header.indexOf('세션명'),
+    room: header.indexOf('장소'),
+    presentTime: header.indexOf('발표시간'),
+    title: header.indexOf('제목'),
+    note: header.indexOf('비고'),
+  };
+  const requiredKeys = ['date','name','sessionTime','session','room','presentTime','title'];
+  const missing = requiredKeys.filter(k => idx[k] === -1);
+  if(missing.length) throw new Error('헤더에서 다음 컬럼을 찾지 못했습니다: ' + missing.join(', '));
+
+  const newRows = [];
+  for(let r=1; r<table.length; r++){
+    const row = table[r];
+    const name = (row[idx.name]||'').trim();
+    if(!name) continue;
+    newRows.push({
+      date: (row[idx.date]||'').trim(),
+      name,
+      sessionTime: (row[idx.sessionTime]||'').trim(),
+      session: (row[idx.session]||'').trim(),
+      room: (row[idx.room]||'').trim(),
+      presentTime: (row[idx.presentTime]||'').trim(),
+      title: (row[idx.title]||'').trim(),
+      note: idx.note > -1 ? (row[idx.note]||'').trim() : '',
+    });
+  }
+  rows = newRows;
+}
+
+const statusEl = document.getElementById('status');
+const liveLabel = document.getElementById('liveLabel');
+const updatedAt = document.getElementById('updatedAt');
+
+async function loadFromUrl(){
+  if(!CSV_URL || CSV_URL.includes('여기에_실제_게시ID를_넣으세요')){
+    statusEl.textContent = '아직 CSV_URL이 설정되지 않았습니다 — 데모 데이터로 표시 중입니다.';
+    statusEl.className = 'setup-status';
+    return;
+  }
+  statusEl.textContent = '불러오는 중...';
+  statusEl.className = 'setup-status';
+  try{
+    const res = await fetch(CSV_URL, {cache:'no-store'});
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    applyCSV(text);
+    selectedDate = null;
+    assignPersonColors();
+    buildDayTabs();
+    buildGrid();
+    statusEl.textContent = '연결 성공 — 구글시트 데이터를 표시 중입니다. (' + rows.length + '건)';
+    statusEl.className = 'setup-status ok';
+    liveLabel.textContent = '구글시트 실시간 연동 중';
+    updatedAt.textContent = '마지막 업데이트: ' + new Date().toLocaleString('ko-KR');
+  }catch(err){
+    statusEl.textContent = '불러오기 실패: ' + err.message + ' (CORS 차단이거나 게시 설정을 확인해보세요)';
+    statusEl.className = 'setup-status err';
+  }
+}
+
+document.getElementById('reloadBtn').addEventListener('click', loadFromUrl);
+document.getElementById('demoBtn').addEventListener('click', ()=>{
+  rows = demoRows();
+  selectedDate = null;
+  assignPersonColors();
+  buildDayTabs();
+  buildGrid();
+  statusEl.textContent = '데모 데이터로 표시 중입니다.';
+  statusEl.className = 'setup-status';
+  liveLabel.textContent = '데모 데이터 표시 중';
+  updatedAt.textContent = '마지막 업데이트: -';
+});
+
+// On page load: show demo first, then try auto-connecting to the fixed CSV_URL
+rows = demoRows();
+assignPersonColors();
+buildDayTabs();
+buildGrid();
+loadFromUrl();
+
+const programLinkEl = document.getElementById('programLink');
+if(PROGRAM_URL && !PROGRAM_URL.includes('여기에_학회_공식_프로그램_페이지_주소를_넣으세요')){
+  programLinkEl.href = PROGRAM_URL;
+} else {
+  programLinkEl.style.display = 'none';
+}
+
+</script>
+
+</body>
+</html>
