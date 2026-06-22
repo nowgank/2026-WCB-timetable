@@ -630,7 +630,9 @@ function parseCSV(text){
     }
   }
   if(field.length || row.length){ row.push(field); out.push(row); }
-  return out.filter(r => r.length && r.some(x=>x.trim()!==''));
+  return out
+    .filter(r => r.length && r.some(x=>x.trim()!==''))
+    .map(r => r.map(f => f.trim().replace(/^"|"$/g, '')));
 }
 
 function applyCSV(text){
